@@ -65,11 +65,14 @@ class Scraper:
             'canon': pre_story_links[1].text,
             'author_id': author_id,
             'title': title,
-            'updated': int(times[0]['data-xutime']),
-            'published': int(times[1]['data-xutime']),
             'lang': metadata_parts[1].strip(),
             'genres': genres
         }
+        if(len(times)>1):
+            metadata['updated'] = int(times[0]['data-xutime'])
+            metadata['published'] = int(times[1]['data-xutime'])
+        else:
+            metadata['published'] = int(times[0]['data-xutime'])
         for parts in metadata_parts:
             parts = parts.strip()
             tag_and_val = parts.split(':')
@@ -88,7 +91,7 @@ class Scraper:
             metadata['status'] = 'Incomplete'
         return metadata
 
-    def scrape_story(self, story_id, keep_html=False):
+    def scrape_story(self, story_id, keep_html=False, enable_reviews=False):
         metadata = self.scrape_story_metadata(story_id)
         metadata['chapters'] = {}
         metadata['reviews'] = {}
@@ -99,10 +102,11 @@ class Scraper:
             time.sleep(self.rate_limit)
             chapter = self.scrape_chapter(story_id, chapter_id)
             time.sleep(self.rate_limit)
-            chapter_reviews = self.scrape_reviews_for_chapter(
+            if enable_reviews:
+                chapter_reviews = self.scrape_reviews_for_chapter(
                 story_id, chapter_id)
             metadata['chapters'][chapter_id] = chapter
-            metadata['reviews'][chapter_id] = chapter_reviews
+            if enable_reviews: metadata['reviews'][chapter_id] = chapter_reviews
         return metadata
 
     def scrape_chapter(self, story_id, chapter_id, keep_html=False):
