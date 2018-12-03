@@ -46,7 +46,7 @@ class Scraper:
             -num_words: total number of words in all chapters of the story
             -rated: the story's rating.
         """
-        url = '{0}/s/{1}'.format(self.base_url, story_id)
+        url = 'https://www.fanfiction.net/s/{}'.format(story_id)
         result = requests.get(url)
         html = result.content
         soup = BeautifulSoup(html, self.parser)
@@ -106,7 +106,7 @@ class Scraper:
         return metadata
 
     def scrape_chapter(self, story_id, chapter_id, keep_html=False):
-        url = '{0}/s/{1}/{2}'.format(self.base_url, story_id, chapter_id)
+        url = 'https://www.fanfiction.net/s/{0}/{1}'.format(story_id, chapter_id)
         result = requests.get(url)
         html = result.content
         soup = BeautifulSoup(html, self.parser)
@@ -124,7 +124,7 @@ class Scraper:
             Each review dict contains the user id of the reviewer if it exists,
             the timestamp of the review, and the text of the review.
         """
-        url = '{0}/r/{1}/{2}'.format(self.base_url, story_id, chapter_id)
+        url = 'https://www.fanfiction.net/s/{0}/{1}'.format(story_id, chapter_id)
         result = requests.get(url)
         html = result.content
         soup = BeautifulSoup(html, self.parser)
