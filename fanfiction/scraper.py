@@ -12,19 +12,13 @@ from bs4 import BeautifulSoup
 from tqdm import tqdm
 import pdb
 
-def check():
-    print("This is working")
-    print("Local Packages for the win")
-
 class Scraper:
-    print("Scraper has Started")
     def __init__(self, rate_limit=1):
         self.base_url = 'https://fanfiction.net'
         self.rate_limit = rate_limit
         self.parser = "html.parser"
 
     def get_genres(self, genre_text):
-        print("Getting Genre")
         genres = genre_text.split('/')
         # Hurt/Comfort is annoying because of the '/'
         corrected_genres = []
@@ -83,7 +77,6 @@ class Scraper:
             -num_words: total number of words in all chapters of the story
             -rated: the story's rating.
         """
-        print("starting Story Scrape")
         url = 'https://www.fanfiction.net/s/{}'.format(story_id)
         try:
             result = requests.get(url)
