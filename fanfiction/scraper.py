@@ -1,19 +1,30 @@
+# !/usr/local/bin/python3
+# -*- coding: utf-8 -*-
+
 # Python 2/3 compatibility
+#personal version of https://github.com/michaelmilleryoder/fanfiction
 try:
     from urllib.parse import unquote_plus
 except ImportError:
     from urllib import unquote_plus
 import time, re, requests
 from bs4 import BeautifulSoup
+from tqdm import tqdm
+import pdb
+
+def check():
+    print("This is working")
+    print("Local Packages for the win")
 
 class Scraper:
-
-    def __init__(self):
-        self.base_url = 'http://fanfiction.net/'
-        self.rate_limit = 1
+    print("Scraper has Started")
+    def __init__(self, rate_limit=1):
+        self.base_url = 'https://fanfiction.net'
+        self.rate_limit = rate_limit
         self.parser = "html.parser"
 
     def get_genres(self, genre_text):
+        print("Getting Genre")
         genres = genre_text.split('/')
         # Hurt/Comfort is annoying because of the '/'
         corrected_genres = []
@@ -25,6 +36,32 @@ class Scraper:
             else:
                 corrected_genres.append(genre)
         return corrected_genres
+
+    def story_ids_by_fandom(self, fandom_type, fandom_name, out_fpath):
+        """
+        Saves a list of story IDs for a fandom to a text file.
+        """
+        url = 'https://www.fanfiction.net/{0}/{1}/?&srt=1&lan=1&r=10'.format(self.base_url, fandom_type, fandom_name.replace(' ', '-'))
+        result = requests.get(url)
+        html = result.content
+        soup = BeautifulSoup(html, self.parser)
+
+        # Get list of pages
+        last_page = int(soup.find('a', text="Last")['href'].split('=')[-1])
+
+        for p in tqdm(range(1, last_page)):
+            url = 'https://www.fanfiction.net/{0}/{1}/?&srt=1&lan=1&r=10&p={2}'.format(fandom_type, fandom_name.replace(' ', '-'), p)
+            result = requests.get(url)
+            html = result.content
+            soup = BeautifulSoup(html, self.parser)
+
+            # Get story IDs
+            story_ids = [s['href'].split('/')[2] for s in soup.find_all('a', {'class': 'stitle'})]
+
+            # Save story IDs (append)
+            with open(out_fpath, 'a') as f:
+                for s in story_ids:
+                    f.write(s + '\n')
 
     def scrape_story_metadata(self, story_id):
         """
@@ -46,30 +83,64 @@ class Scraper:
             -num_words: total number of words in all chapters of the story
             -rated: the story's rating.
         """
+        print("starting Story Scrape")
         url = 'https://www.fanfiction.net/s/{}'.format(story_id)
-        result = requests.get(url)
+        try:
+            result = requests.get(url)
+        except (requests.exceptions.ChunkedEncodingError,
+                requests.exceptions.ConnectionError) as e:
+            pdb.set_trace()
+            return None
         html = result.content
         soup = BeautifulSoup(html, self.parser)
-        pre_story_links = soup.find(id='pre_story_links').find_all('a')
-        author_id = int(re.search(r"var userid = (.*);", str(soup)).groups()[0]);
-        title = re.search(r"var title = (.*);", str(soup)).groups()[0];
-        title = unquote_plus(title)[1:-1]
+        pre_story_links = soup.find(id='pre_story_links')
+        if pre_story_links is None:
+            return None
+        else:
+            pre_story_links = soup.find(id='pre_story_links').find_all('a')
+        #author_id = re.search(r"var userid = (.*);", str(soup))
+        author_id = re.search(r"var userid = (.*?);", str(html))
+        if author_id is None:
+            pdb.set_trace()
+        else:
+            author_id = int(author_id.groups()[0]);
+        #title = re.search(r"var title = (.*);", str(soup)).groups()[0];
+        title = re.search(r"var title = (.*?);", str(html)).groups()[0];
+        title = unquote_plus(title)[2:-2]
         metadata_div = soup.find(id='profile_top')
         times = metadata_div.find_all(attrs={'data-xutime':True})
         metadata_text = metadata_div.find(class_='xgray xcontrast_txt').text
         metadata_parts = metadata_text.split('-')
         genres = self.get_genres(metadata_parts[2].strip())
+        try:
+            chapters = soup.find(id='chap_select').find_all("option")
+            chapter_names = []
+            omit = 0
+            while len(chapters) > 0:
+                ch = chapters.pop()
+                if omit > 0:
+                    chapter_names.insert(0,ch.text[0:-omit])
+                else:
+                    chapter_names.insert(0,ch.text)
+                omit = len(ch.text)
+        except AttributeError:
+            chapter_names=[title]
+
+
         metadata = {
             'id': story_id,
-            'canon_type': pre_story_links[0].text,
             'canon': pre_story_links[-1].text,
             'author_id': author_id,
             'title': title,
-            'updated': int(times[0]['data-xutime']),
-            'published': int(times[1]['data-xutime']),
             'lang': metadata_parts[1].strip(),
+            'published': int(times[-1]['data-xutime']),
+            'chapter_names': chapter_names,
             'genres': genres
         }
+        if len(pre_story_links) > 1:
+            metadata['canon_type'] = pre_story_links[0].text,
+        if len(times) > 1:
+            metadata['updated'] = int(times[0]['data-xutime'])
         for parts in metadata_parts:
             parts = parts.strip()
             tag_and_val = parts.split(':')
@@ -90,29 +161,50 @@ class Scraper:
 
     def scrape_story(self, story_id, keep_html=False):
         metadata = self.scrape_story_metadata(story_id)
+        if metadata is None:
+            return None # Error--story not found
+
+        if "chapters" in metadata:
+            num_chapters = len(metadata['chapters'])
+        if "num_chapters" in metadata:
+            num_chapters = int(metadata['num_chapters'])
+        else:
+            num_chapters = 1
+
         metadata['chapters'] = {}
         metadata['reviews'] = {}
-        num_chapters = metadata['num_chapters']
         # rate limit to follow fanfiction.net TOS
         time.sleep(self.rate_limit)
+
+        if num_chapters == 0: # no chapter structure
+            num_chapters = 1
+        metadata["num_chapters"] = num_chapters
+
         for chapter_id in range(1, num_chapters + 1):
             time.sleep(self.rate_limit)
             chapter = self.scrape_chapter(story_id, chapter_id)
             time.sleep(self.rate_limit)
             chapter_reviews = self.scrape_reviews_for_chapter(
                 story_id, chapter_id)
+
             metadata['chapters'][chapter_id] = chapter
             metadata['reviews'][chapter_id] = chapter_reviews
+
         return metadata
 
     def scrape_chapter(self, story_id, chapter_id, keep_html=False):
-        url = 'https://www.fanfiction.net/s/{0}/{1}'.format(story_id, chapter_id)
-        result = requests.get(url)
+        url = 'https://www.fanfiction.net/r/{0}/{1}'.format(story_id, chapter_id)
+        try:
+            result = requests.get(url)
+        except requests.exceptions.SSLError:
+            return b''
         html = result.content
         soup = BeautifulSoup(html, self.parser)
         chapter = soup.find(class_='storytext')
+        if chapter is None:
+            return b''
         if not keep_html:
-            chapter_text = chapter.get_text(' ').encode('utf8')
+            chapter_text = chapter.get_text('\n').encode('utf8')
         return chapter_text
 
     def scrape_reviews_for_chapter(self, story_id, chapter_id):
@@ -124,13 +216,25 @@ class Scraper:
             Each review dict contains the user id of the reviewer if it exists,
             the timestamp of the review, and the text of the review.
         """
-        url = 'https://www.fanfiction.net/s/{0}/{1}'.format(story_id, chapter_id)
-        result = requests.get(url)
+        url = 'https://www.fanfiction.net/r/{0}/{1}'.format(story_id, chapter_id)
+        try:
+            result = requests.get(url)
+        except ssl.SSLError:
+            return []
         html = result.content
         soup = BeautifulSoup(html, self.parser)
-        reviews_table = soup.find(class_='table-striped').tbody
-        reviews_tds = reviews_table.find_all('td')
+        reviews_table = soup.find(class_='table-striped')
         reviews = []
+
+        if reviews_table is None:
+            return reviews
+        else:
+            reviews_table = reviews_table.tbody
+        reviews_tds = reviews_table.find_all('td')
+
+        if len(reviews_tds) == 1 and reviews_tds[0].string == 'No Reviews found.':
+            return reviews
+
         for review_td in reviews_tds:
             match = re.search(r'href="/u/(.*)/.*">.*</a>', str(review_td))
             if match is not None:
@@ -138,7 +242,11 @@ class Scraper:
             else:
                 user_id = None
             time = review_td.find('span', attrs={'data-xutime':True})
-            time = int(time['data-xutime'])
+            if time is not None:
+                time = int(time['data-xutime'])
+
+            if review_td.div is None:
+               continue
             review = {
                 'time': time,
                 'user_id': user_id,
