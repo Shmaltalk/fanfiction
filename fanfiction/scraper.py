@@ -31,9 +31,9 @@ class Scraper:
                 corrected_genres.append(genre)
         return corrected_genres
 
-    def story_ids_by_fandom(self, fandom_type, fandom_name, out_fpath):
+    def story_ids_by_fandom(self, fandom_type, fandom_name):
         """
-        Saves a list of story IDs for a fandom to a text file.
+        Returns a list of story IDs for a fandom to a text file.
         """
         url = 'https://www.fanfiction.net/{0}/{1}/?&srt=1&lan=1&r=10'.format(fandom_type, fandom_name.replace(' ', '-'))
         result = requests.get(url)
@@ -55,10 +55,7 @@ class Scraper:
             # Get story IDs
             story_ids = [s['href'].split('/')[2] for s in soup.find_all('a', {'class': 'stitle'})]
 
-            # Save story IDs (replace)
-            with open(out_fpath, 'w') as f:
-                for s in story_ids:
-                    f.write(s + '\n')
+            return story_ids
 
     def scrape_story_metadata(self, story_id):
         """
