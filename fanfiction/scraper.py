@@ -35,13 +35,16 @@ class Scraper:
         """
         Saves a list of story IDs for a fandom to a text file.
         """
-        url = 'https://www.fanfiction.net/{0}/{1}/?&srt=1&lan=1&r=10'.format(self.base_url, fandom_type, fandom_name.replace(' ', '-'))
+        url = 'https://www.fanfiction.net/{0}/{1}/?&srt=1&lan=1&r=10'.format(fandom_type, fandom_name.replace(' ', '-'))
         result = requests.get(url)
         html = result.content
         soup = BeautifulSoup(html, self.parser)
 
         # Get list of pages
-        last_page = int(soup.find('a', text="Last")['href'].split('=')[-1])
+        try:
+          last_page = int(soup.find('a', text="Last")['href'].split('=')[-1])
+        except TypeError:
+          last_page = 2
 
         for p in tqdm(range(1, last_page)):
             url = 'https://www.fanfiction.net/{0}/{1}/?&srt=1&lan=1&r=10&p={2}'.format(fandom_type, fandom_name.replace(' ', '-'), p)
@@ -52,8 +55,8 @@ class Scraper:
             # Get story IDs
             story_ids = [s['href'].split('/')[2] for s in soup.find_all('a', {'class': 'stitle'})]
 
-            # Save story IDs (append)
-            with open(out_fpath, 'a') as f:
+            # Save story IDs (replace)
+            with open(out_fpath, 'w') as f:
                 for s in story_ids:
                     f.write(s + '\n')
 
@@ -119,6 +122,9 @@ class Scraper:
         except AttributeError:
             chapter_names=[title]
 
+        descrip = soup.find('div', attrs={'style':'margin-top:2px'}).text
+
+
 
         metadata = {
             'id': story_id,
@@ -128,7 +134,8 @@ class Scraper:
             'lang': metadata_parts[1].strip(),
             'published': int(times[-1]['data-xutime']),
             'chapter_names': chapter_names,
-            'genres': genres
+            'genres': genres,
+            'descrip': descrip
         }
         if len(pre_story_links) > 1:
             metadata['canon_type'] = pre_story_links[0].text,
@@ -186,18 +193,18 @@ class Scraper:
         return metadata
 
     def scrape_chapter(self, story_id, chapter_id, keep_html=False):
-        url = 'https://www.fanfiction.net/r/{0}/{1}'.format(story_id, chapter_id)
+        url = 'https://www.fanfiction.net/s/{0}/{1}'.format(story_id, chapter_id)
         try:
             result = requests.get(url)
         except requests.exceptions.SSLError:
-            return b''
+            return ''
         html = result.content
         soup = BeautifulSoup(html, self.parser)
         chapter = soup.find(class_='storytext')
         if chapter is None:
-            return b''
+            return ''
         if not keep_html:
-            chapter_text = chapter.get_text('\n').encode('utf8')
+            chapter_text = chapter.get_text('\n').replace("'", "").replace('"', '')
         return chapter_text
 
     def scrape_reviews_for_chapter(self, story_id, chapter_id):
@@ -243,7 +250,7 @@ class Scraper:
             review = {
                 'time': time,
                 'user_id': user_id,
-                'text': review_td.div.text.encode('utf8')
+                'text': review_td.div.text.replace("'", "").replace('"', '')
             }
             reviews.append(review)
         return reviews

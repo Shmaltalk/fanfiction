@@ -1,2 +1,5 @@
 *.pyc
 dist/
+
+fic-data
+fic-ids
